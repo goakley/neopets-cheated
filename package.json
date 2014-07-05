@@ -1,9 +1,9 @@
 {
   "name": "neopetscheated",
-  "title": "neopetscheated",
+  "title": "Neopets Cheated",
   "id": "jid1-15gAuWznyzmsYg",
-  "description": "a basic add-on",
-  "author": "",
-  "license": "MPL 2.0",
-  "version": "0.1"
+  "description": "Provides behind-the-scenes help while playing Cheat! on Neopets",
+  "author": "Glen Oakley",
+  "license": "GPLv3",
+  "version": "0.0.0"
 }
