@@ -1,3 +1,10 @@
+// TODO: Add the ability to track opponent's cards that they've picked up
+// We only blindly assign them cards, but don't use them
+// It is tricky to track if an opponent might have played one of the cards
+// that we know they have
+// and my brain is not ready for that yet
+
+
 function int_to_card(n) {
     switch(n) {
     case 1: return 'ace';
@@ -81,7 +88,6 @@ function get_state() {
 
 
 function state_turn_player(data, callback) {
-    console.log(data);
     // clear the selected cards
     data['player']['just_played'] = new_hand();
     var suitcards = [];
@@ -107,9 +113,10 @@ function state_turn_player(data, callback) {
 
 function state_turn_opponent(data) {
     // record the last played cards
-    var move = $("b:contains('played')").text().split(' played ')[1];
-    var count = parseInt(move.split(' ')[0]);
-    var card = move.split(' ')[1].toLowerCase();
+    var move = $("b:contains('played')").text().split(' played ');
+    var opponent = move[0].trim();
+    var count = parseInt(move[1].split(' ')[0]);
+    var card = move[1].split(' ')[1].toLowerCase();
     if (count > 1) {
         if (card === 'sixes') {
             // dumb special case...
@@ -118,10 +125,65 @@ function state_turn_opponent(data) {
             card = card.slice(0,-1);
         }
     }
-    data['previous'] = {card:card, count:count};
+    data['turn'] = {card:card, count:count};
+    // determine if an opponent is cheating
+    if (count + data['pile'][card] + data['player']['hand'][card] > 4) {
+        $("form[name='cardform']").prepend('<p style="font-weight:bold;color:">' + opponent + ' is definitely cheating!</p>');
+    }
     return data;
 }
 
+function state_accusation_success(data) {
+    // who got caught?
+    var opponent = $("center:contains('gets the pile added to their hand')");
+    // opponent got caught
+    if (opponent.length === 1) {
+        // identify the opponent
+        opponent = opponent.text();
+        opponent = opponent.slice(
+            opponent.indexOf('!!!') + 3,
+            opponent.indexOf(' gets the pile added to their hand')
+        );
+        if (data['opponents'][opponent] === undefined) {
+            data['opponents'][opponent] = new_opponent();
+        }
+        // give the opponent all the cards that were played
+        for (var card in data['pile']) {
+            data['opponents'][opponent]['hand'][card] = data['pile'][card];
+        }
+    }
+    // we got caught
+    // don't worry about it, we'll calculate our hand next state
+    data['pile'] = new_hand();
+    return data;
+}
+
+function state_accusation_failure(data) {
+    // who failed an accusation?
+    var opponent = $("center:contains('gets the pile added to their hand')");
+    // opponent failed
+    if (opponent.length === 1) {
+        // make sure there's enough historical data to work
+        if (data['turn'] === undefined) {
+            return data;
+        }
+        // identify the opponent
+        opponent = opponent.text().trim();
+        opponent = opponent.slice(0, opponent.indexOf(" accused"));
+        if (data['opponents'][opponent] === undefined)
+            data['opponents'][opponent] = new_opponent();
+        // give the opponent all the cards that were played
+        for (var card in data['pile']) {
+            data['opponents'][opponent]['hand'][card] = data['pile'][card];
+        }
+        // plus what was played by the opponent
+        data['opponents'][opponent]['hand'][data['turn']['card']] += data['turn']['count'];
+    }
+    // we failed
+    // don't worry about it, we'll calculate our hand next state
+    data['pile'] = new_hand();
+    return data;
+}
 
 function parse_state(state, data, callback) {
     if (state.indexOf('state.turn') === 0) {
@@ -144,8 +206,11 @@ function parse_state(state, data, callback) {
             state_turn_player(data, callback);
             return;
         }
-        if (state === 'state.turn.opponent') {
+        else if (state === 'state.turn.opponent') {
             data = state_turn_opponent(data);
+        }
+        else {
+            throw 'Discovered unknown state';
         }
     }
     else if (state.indexOf('state.accusation') === 0) {
@@ -154,6 +219,19 @@ function parse_state(state, data, callback) {
             data['pile'][card] += data['player']['just_played'][card];
         data['player']['just_played'] = new_hand();
         // process the state
+        if (state === 'state.accusation.nobody') {
+            // actually, nothing really to do here
+            delete data['turn'];
+        }
+        else if (state === 'state.accusation.success') {
+            data = state_accusation_success(data);
+        }
+        else if (state === 'state.accusation.failure') {
+            data = state_accusation_failure(data);
+        }
+        else {
+            throw 'Discovered unknown state';
+        }
     }
     callback(data);
 }
@@ -162,7 +240,7 @@ function parse_state(state, data, callback) {
 // when we're sent the game information, we can start working
 self.port.on('data', function(data) {
     var state = get_state();
-    console.log(state);
+    //console.log(state);
     if (data['player'] === undefined)
         data = new_data();
     parse_state(state, data, function(newdata) {
